@@ -633,10 +633,10 @@ class EPUBPackage {
     }
   }
 
-  // TODO meta tags as per http://idpf.org/epub/30/spec/epub30-publications.html#sec-meta-elem
+  // @todo meta tags as per http://idpf.org/epub/30/spec/epub30-publications.html#sec-meta-elem
   //      marc:relators
 
-  // TODO link elements as per http://idpf.org/epub/30/spec/epub30-publications.html#sec-link-elem
+  // @todo link elements as per http://idpf.org/epub/30/spec/epub30-publications.html#sec-link-elem
 
   /**
    * Defines all core media types for epub 3.0
@@ -709,7 +709,7 @@ class EPUBPackage {
       throw new \Exception('No fallback provided for non core media type: ' . $mediatype);
     }
 
-    // TODO check if audio/video are provided remotely and force fallback if remote
+    // @todo check if audio/video are provided remotely and force fallback if remote
     //   see also: http://idpf.org/epub/30/spec/epub30-publications.html#sec-resource-locations
 
     $new_item = $this->dom->createElement('item');
@@ -860,7 +860,7 @@ class EPUBPackage {
     return $this->xpath->query('//itemref', $spine);
   }
 
-// TODO set mediaoverlay http://idpf.org/epub/30/spec/epub30-mediaoverlays.html
+// @todo set mediaoverlay http://idpf.org/epub/30/spec/epub30-mediaoverlays.html
 
 
   /**
@@ -903,7 +903,7 @@ class EPUBPackage {
       throw new \Exception('No dc:language present in metadata element');
     }
     else {
-      // TODO verify dc:language conforms to RFC5646
+      // @todo verify dc:language conforms to RFC5646
     }
 
     // verify manifest is the second child of package
@@ -946,7 +946,7 @@ class EPUBPackage {
             throw new \Exception('Manifest item(' .$node->getAttribute('id') . ') is non-core media-type but does not provide fallback');
           }
 
-          // TODO follow the fallback chain and verify it terminates in a coreMediaType
+          // @todo follow the fallback chain and verify it terminates in a coreMediaType
         }
       }
     }
@@ -987,7 +987,7 @@ class EPUBPackage {
     $meta->setAttribute('name', 'dtb:uid');
     $head->appendChild($meta);
 
-    // TODO: review which of the following meta elements are required and which
+    // @todo: review which of the following meta elements are required and which
     // are part of best practice.
     $meta = $ncxDoc->createElement('meta');
     $meta->setAttribute('name', 'epub-creator');
