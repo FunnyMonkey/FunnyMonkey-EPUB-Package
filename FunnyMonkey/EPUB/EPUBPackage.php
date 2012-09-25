@@ -1030,7 +1030,20 @@ class EPUBPackage {
             $navPoint = $ncxDoc->createElement('navPoint');
             $navPoint->setAttribute('id', 'navpoint-'. $i);
             $navPoint->setAttribute('playOrder', $i);
-            $navText = $ncxDoc->createElement('text', $this->getGenericTitle($i));
+            $href = $page->getAttribute('href');
+
+            // Attempt to find the document title.
+            $pageDom = new \DOMDocument('1.0', 'utf-8');
+            @$pageDom->loadHTML($this->files[$href]['contents']);
+            $xpath = new \DOMXpath($pageDom);
+            $match = $xpath->query("//title");
+            if ($match->length === 1) {
+              $navText = $ncxDoc->createElement('text', $match->item(0)->nodeValue);
+            }
+            else {
+              // fallback to generic title
+              $navText = $ncxDoc->createElement('text', $this->getGenericTitle($i));
+            }
             $navLabel = $ncxDoc->createElement('navLabel');
             $content = $ncxDoc->createElement('content');
             $content->setAttribute('src', $page->getAttribute('href'));
