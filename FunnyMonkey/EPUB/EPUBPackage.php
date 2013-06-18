@@ -54,10 +54,28 @@ class EPUBPackage {
   // pattern to use when title can't be derived from content
   private $titlePattern = 'Page %u';
 
+  // Fullpath to zip executable
+  private $zipExecutable = '/usr/bin/zip';
+
+  // Success code for zip execution (unix success is 0)
+  private $zipSuccess = 0;
+
+  // Zip executable options. Defaults are for 'Info ZIP' zip 3.0
+  //  !filename will be replaced with the zipfilename
+  //  Assumed that all paths are relative to the CWD
+  private $zipArgs = '-UN=UTF8 -r "!filename" .';
+
+  // Similar to zipArgs, but for the mimetype file. This needs to have no
+  // compression so it requirest a seperate add.
+  //  !filename will be replaced with the zipfilename
+  //  Assumed that all paths are relative to the CWD
+  private $zipArgsMimetype = '-UN=UTF8 -0 "!filename" ./mimetype';
+
   /**
    * DOMDocument $dom stores the domdocument for content.opf
    */
   public $dom = NULL;
+
 
   /**
    * String where manifest items will be placed
@@ -1132,11 +1150,190 @@ class EPUBPackage {
    * and then via Zip 3.0 (July 5th 2008), by Info-ZIP on ubuntu
    *  zip -0 -X stub.zip mimetype
    *
-   * @param $zipname path where to build the zip, makesure this is writable.
+   * @param string $zipname path where to build the zip, makesure this is writable.
+   * @param string $method method to use 'PHP' (default) or 'OS'. If using OS
+   *   You may need to call setZipExecutable('PATH/TO/ZIP'), default is /usr/bin/zip.
    * @see http://idpf.org/epub/30/spec/epub30-ocf.html#sec-zip-container-mime
    * @see https://bugs.php.net/bug.php?id=41243
    */
-  public function bundle($zipname) {
+  public function bundle($zipname, $method = 'PHP') {
+    switch ($method) {
+      case 'OS':
+        $this->bundleOS($zipname);
+        break;
+      case 'PHP':
+        try {
+          $this->bundlePHP($zipname);
+        }
+        catch (Exception $e) {
+          throw $e;
+        }
+        break;
+    }
+  }
+
+  /**
+   * Set the Zip executable path name. For use with bundle method = 'OS'.
+   *
+   * @param  string $string The full path to the zip executable to use. Default
+   *  '/usr/bin/zip'
+   */
+  public function setZipExecutable($string) {
+    $this->zipExecutable = $string;
+  }
+
+  /**
+   * Set the Zip executable arguments for adding all files. For use with bundle
+   * method = 'OS'.
+   *
+   * @param string $string
+   *   The zip executable arguments to use. Default '-UN=UTF8 -r !filename .'
+   */
+  public function setZipArgs($string) {
+    $this->zipArgs = $string;
+  }
+
+  /**
+   * Set the zip arguments for the non-compressed mimetype file.
+   *
+   * @param string  $string The zip executable arguments to use when adding the
+   *   non-compressed mimetype epub entry. default: '-UN=UTF8 -0 !filename ./mimetype'
+   */
+  public function setZipArgsMimetype($string) {
+    $this->zipArgsMimetype = $string;
+  }
+
+  /**
+   * Sucess code to check for successful zip execution.
+   * default is 0 which is standard Unix success code. Note that this uses a
+   * strict !== comparison.
+   *
+   * @param mixed $success
+   *   The success code to check zip execution for. Note that this will be
+   *   compared to the $return parameter from exec().
+   */
+  public function setZipSuccess($success) {
+    $this->zipSuccess = $success;
+  }
+
+  /**
+   * Use the OS provided bundler. This is used may be used to avoid incompatibilities
+   * with PHP ZipArchive and UTF-8 entries or to provide better compression
+   * performance.
+   *
+   * @param string $zipname The zip filename to create.
+   */
+  private function bundleOS($zipname) {
+    if (!is_file($this->zipExecutable)) {
+      throw new \Exception('Zipexecutable ' . $this->zipExecutable . 'is not a file.');
+    }
+    if (!is_executable($this->zipExecutable)) {
+      throw new \Exception('Zipexecutable ' . $this->zipExecutable . 'is not executable.');
+    }
+
+    // PHP doesn't have a tempdir func we use tempnam, which unfortunately
+    // creates a file.
+    $buildDir = tempnam(sys_get_temp_dir(), 'FMEPUB');
+    if (file_exists($buildDir)) {
+      unlink($buildDir);
+    }
+    if (!mkdir($buildDir)) {
+      throw new \Exception('Unable to create zip build directory: "' . $buildDir . '"');
+    }
+
+    // mimetype
+    $this->OSWriteFile($buildDir . '/mimetype', 'application/epub+zip');
+
+    // container
+    if (!mkdir($buildDir . '/META-INF')) {
+      throw new \Exception('Unable to create META-INF build directory in : "' . $buildDir . '"');
+    }
+    $container = $this->buildContainer();
+    $this->OSWriteFile($buildDir . '/META-INF/container.xml', $container->saveXML());
+
+    // content.opf
+    if (!mkdir($buildDir . '/' . $this->contentDir)) {
+      throw new \Exception('Unable to create "' . $this->contentDir . '" directory in : "' . $buildDir . '"');
+    }
+    $this->OSWriteFile($buildDir . '/' . $this->contentDir . '/' . $this->filename, $this->dom->saveXML());
+
+    // manifest items
+    foreach($this->manifestGetItems() as $item) {
+      $href = $item->getAttribute('href');
+      if (!empty($this->files[$href]['type'])) {
+        if ($this->files[$href]['type'] == 'file') {
+          if (is_file($this->files[$href]['contents']) && is_readable($this->files[$href]['contents'])) {
+            // Copy file
+            $dest = $buildDir . '/' .  $this->contentDir . '/' . $href;
+            $dirname = dirname($dest);
+            if (!is_dir($dirname)) {
+              if (!mkdir($dirname, 0755, TRUE)) {
+                throw new \Exception('Unable to create directory for ' . $dirname);
+              }
+            }
+            if (copy($this->files[$href]['contents'], $dest) === FALSE) {
+              throw new \Exception('Unable to copy "' . $this->files[$href]['contents'] . '" to "' . $dest . '"');
+            }
+          }
+          else {
+            throw new \Exception('Source file "' . $this->files[$href]['contents'] . '" does not exist or is not readable.');
+          }
+        }
+        else {
+          // Write new file.
+          $dest = $buildDir . '/' . $this->contentDir . '/' . $href;
+          $this->OSWriteFile($dest, $this->files[$href]['contents']);
+        }
+      }
+    }
+
+    // return the the cwd before leaving this function.
+    $cwd = getcwd();
+    if (!chdir($buildDir)) {
+      throw new \Exception('Unable to change dir to "' . $buildDir . '"');
+    }
+
+    // zip (mimetype receives no compression)
+    $exec = $this->zipExecutable . ' ' . str_replace('!filename', $zipname, $this->zipArgs);
+    exec($exec, $output, $return);
+    if ($return !== $this->zipSuccess) {
+      chdir($cwd);
+      throw new \Exception('Error adding to zipfile(' . $exec . '): ' . $output);
+    }
+
+    // now add the mimetype file.
+    $exec = $this->zipExecutable . ' ' . str_replace('!filename', $zipname, $this->zipArgsMimetype);
+    exec($exec, $output, $return);
+    if ($return !== $this->zipSuccess) {
+      chdir($cwd);
+      throw new \Exception('Error adding to zipfile(' . $exec . '): ' . $output);
+    }
+    chdir($cwd);
+  }
+
+  private function OSWriteFile($filename, $content) {
+    $dirname = dirname($filename);
+    if (!is_dir($dirname)) {
+      if (!mkdir($dirname, 0755, TRUE)) {
+        throw new \Exception('OS writefile unable to create directory for ' . $dirname);
+      }
+    }
+
+    $fhandle = fopen($filename, 'w');
+    if ($fhandle === FALSE) {
+      throw new \Exception('Unable to open file "' . $filename . '" for writing');
+    }
+
+    if (fwrite($fhandle, $content) === FALSE) {
+      throw new \Exception('Unable to write contents to file "' . $filename . '"');
+    }
+
+    if (fclose($fhandle) === FALSE) {
+      throw new \Exception('Unable to close file "' . $filename . '"');
+    }
+  }
+
+  private function bundlePHP($zipname) {
     if (copy(__DIR__ . '/' . 'stub.zip', $zipname)) {
       $zip = new \ZipArchive;
       $result = $zip->open($zipname);
@@ -1151,16 +1348,7 @@ class EPUBPackage {
         */
 
         // add container.xml
-        $container = new \DOMDocument('1.0', 'utf-8');
-        $root = $container->createElementNS('urn:oasis:names:tc:opendocument:xmlns:container', 'container');
-        $root->setAttribute('version', '1.0');
-        $container->appendChild($root);
-        $rootfiles = $container->createElement('rootfiles');
-        $rootfile = $container->createElement('rootfile');
-        $rootfile->setAttribute('full-path', $this->contentDir . '/' . $this->filename);
-        $rootfile->setAttribute('media-type', 'application/oebps-package+xml');
-        $rootfiles->appendChild($rootfile);
-        $root->appendChild($rootfiles);
+        $container = $this->buildContainer();
         if (!$zip->addFromString('META-INF/container.xml', $container->saveXML())) {
           throw new \Exception('Unable to add container.xml');
         }
@@ -1203,5 +1391,19 @@ class EPUBPackage {
     else {
       throw new \Exception(sprintf('Unable to copy stub.zip file to %s', $zipname));
     }
+  }
+
+  private function buildContainer() {
+    $container = new \DOMDocument('1.0', 'utf-8');
+    $root = $container->createElementNS('urn:oasis:names:tc:opendocument:xmlns:container', 'container');
+    $root->setAttribute('version', '1.0');
+    $container->appendChild($root);
+    $rootfiles = $container->createElement('rootfiles');
+    $rootfile = $container->createElement('rootfile');
+    $rootfile->setAttribute('full-path', $this->contentDir . '/' . $this->filename);
+    $rootfile->setAttribute('media-type', 'application/oebps-package+xml');
+    $rootfiles->appendChild($rootfile);
+    $root->appendChild($rootfiles);
+    return $container;
   }
 }
