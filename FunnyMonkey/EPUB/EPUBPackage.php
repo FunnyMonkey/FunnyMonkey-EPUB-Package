@@ -5,7 +5,7 @@
  * Defines the fmEpubPackage class for creating EPUB 3.0 documents
  *
  * @author    Jeff Graham
- * @version   version 0.4
+ * @version   version 0.5
  * @date      2012
  * @copyright Copyright (C) 2012 Jeff Graham
  *
