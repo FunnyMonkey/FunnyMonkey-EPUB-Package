@@ -1126,7 +1126,8 @@ class EPUBPackage {
     print $this->dom->saveXML();
     foreach($this->manifestGetItems() as $item) {
       print "id:         " . $item->getAttribute('id') . "\n";
-      print "media-type: " . $item->getAttribute('href') . "\n";
+      print "href: " . $item->getAttribute('href') . "\n";
+      print "media-type: " . $item->getAttribute('media-type') . "\n";
       print "properties: " . $item->getAttribute('properties') . "\n";
       print "#######################################################\n";
       if (!empty($this->files[$item->getAttribute('href')]['contents'])) {
