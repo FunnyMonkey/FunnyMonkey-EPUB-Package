@@ -1247,6 +1247,7 @@ class EPUBPackage {
 
     // container
     if (!mkdir($buildDir . '/META-INF')) {
+      $this->cleanup_files(array($buildDir));
       throw new \Exception('Unable to create META-INF build directory in : "' . $buildDir . '"');
     }
     $container = $this->buildContainer();
@@ -1254,6 +1255,7 @@ class EPUBPackage {
 
     // content.opf
     if (!mkdir($buildDir . '/' . $this->contentDir)) {
+      $this->cleanup_files(array($buildDir));
       throw new \Exception('Unable to create "' . $this->contentDir . '" directory in : "' . $buildDir . '"');
     }
     $this->OSWriteFile($buildDir . '/' . $this->contentDir . '/' . $this->filename, $this->dom->saveXML());
@@ -1269,14 +1271,17 @@ class EPUBPackage {
             $dirname = dirname($dest);
             if (!is_dir($dirname)) {
               if (!mkdir($dirname, 0755, TRUE)) {
+                $this->cleanup_files(array($buildDir));
                 throw new \Exception('Unable to create directory for ' . $dirname);
               }
             }
             if (copy($this->files[$href]['contents'], $dest) === FALSE) {
+              $this->cleanup_files(array($buildDir));
               throw new \Exception('Unable to copy "' . $this->files[$href]['contents'] . '" to "' . $dest . '"');
             }
           }
           else {
+            $this->cleanup_files(array($buildDir));
             throw new \Exception('Source file "' . $this->files[$href]['contents'] . '" does not exist or is not readable.');
           }
         }
@@ -1291,6 +1296,7 @@ class EPUBPackage {
     // return the the cwd before leaving this function.
     $cwd = getcwd();
     if (!chdir($buildDir)) {
+      $this->cleanup_files(array($buildDir));
       throw new \Exception('Unable to change dir to "' . $buildDir . '"');
     }
 
@@ -1298,6 +1304,7 @@ class EPUBPackage {
     $exec = $this->zipExecutable . ' ' . str_replace('!filename', $zipname, $this->zipArgs);
     exec($exec, $output, $return);
     if ($return !== $this->zipSuccess) {
+      $this->cleanup_files(array($buildDir));
       chdir($cwd);
       throw new \Exception('Error adding to zipfile(' . $exec . '): ' . $output);
     }
@@ -1306,6 +1313,7 @@ class EPUBPackage {
     $exec = $this->zipExecutable . ' ' . str_replace('!filename', $zipname, $this->zipArgsMimetype);
     exec($exec, $output, $return);
     if ($return !== $this->zipSuccess) {
+      $this->cleanup_files(array($buildDir));
       chdir($cwd);
       throw new \Exception('Error adding to zipfile(' . $exec . '): ' . $output);
     }
@@ -1393,6 +1401,41 @@ class EPUBPackage {
       throw new \Exception(sprintf('Unable to copy stub.zip file to %s', $zipname));
     }
   }
+
+  /**
+   * Helper function to cleanup temporary working directories.
+   *
+   * Note that since this does recursive deletion of the passed paths, this has a
+   * safety check to ensure the path resides in the temp directory.
+   *
+   * @param array $paths
+   *   An array of paths and/or files to delete recursively.
+   */
+  private function cleanup_files($paths) {
+    // Remove our extract directory
+    $tempdir = sys_get_temp_dir();
+
+    foreach ($paths as $cleanup) {
+      // Safety check to ensure that the path is in temp dir.
+      if (strpos($cleanup, $tempdir) === 0) {
+        if (is_file($cleanup)) {
+          unlink($cleanup);
+        }
+        else {
+          // directory, use recursive delete.
+          foreach(new RecursiveIteratorIterator(new RecursiveDirectoryIterator($cleanup, FilesystemIterator::SKIP_DOTS), RecursiveIteratorIterator::CHILD_FIRST) as $path) {
+            $path->isFile() ? unlink($path) : rmdir($path);
+          }
+        }
+
+        // top-level directories will need to be cleared out after contents.
+        if (is_dir($cleanup)) {
+          rmdir($cleanup);
+        }
+      }
+    }
+  }
+
 
   private function buildContainer() {
     $container = new \DOMDocument('1.0', 'utf-8');
