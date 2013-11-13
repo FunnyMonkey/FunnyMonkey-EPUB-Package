@@ -827,9 +827,10 @@ class EPUBPackage {
    * navigation item and should be rendered as part of the navigation structure.
    * @param $id string indicating the id of this element.
    * @param $properties additional properties to indicate split page spreads.
+   * @param $depth depth of the item in hierarchy.
    * @return DOMNode of the newly added spine itemref
    */
-  public function spineAddItemRef($idref, $linear = 'yes', $id = NULL, $properties = array()) {
+  public function spineAddItemRef($idref, $linear = 'yes', $id = NULL, $properties = array(), $depth = 1) {
     $spine = $this->xpath->query('//*[@id="spine"]')->item(0);
     $itemref = $this->dom->createElement('itemref');
 
@@ -843,6 +844,11 @@ class EPUBPackage {
       if (!empty($id)) {
         $itemref->setAttribute('id', $id);
       }
+
+      if (empty($depth) || $depth < 1) {
+        $depth = 1;
+      }
+      $itemref->setAttribute('depth', $depth);
 
       if (!empty($properties)) {
         $check = array_interset($properties, $this->spineItemProperties());
@@ -1039,11 +1045,20 @@ class EPUBPackage {
     // create NavMap as copy of spine
     $navMap = $ncxDoc->createElement('navMap');
     $i = 1; // page counter for naming elements
+
+    $level_parents = array(1 => $navMap);
+
+    // Get all items as array to be able to check values of next/previous item.
+    $nodes = array();
     foreach ($this->spineGetItems() as $node) {
+      $nodes[] = $node;
+    }
+
+    for ($j = 0; $j < count($nodes); $j++) {
+      $node = $nodes[$j];
       if ($node->hasAttribute('idref')) {
         $page = $this->manifestGetItem($node->getAttribute('idref'));
         if ($page->hasAttribute('href') && $page->hasAttribute('media-type') && $node->hasAttribute('linear')) {
-          $title = '';
           if ($node->getAttribute('linear') == 'yes') {
             $navPoint = $ncxDoc->createElement('navPoint');
             $navPoint->setAttribute('id', 'navpoint-'. $i);
@@ -1069,7 +1084,19 @@ class EPUBPackage {
             $navLabel->appendChild($navText);
             $navPoint->appendChild($navLabel);
             $navPoint->appendChild($content);
-            $navMap->appendChild($navPoint);
+
+            // Items with "depth" attribute will be structure as tree, under their level parent.
+            $level = $node->hasAttribute('depth') ? $node->getAttribute('depth') : 1;
+            if (isset($nodes[$j + 1])) {
+              $next_node_level = $nodes[$j + 1]->hasAttribute('depth') ? $nodes[$j + 1]->getAttribute('depth') : 1;
+              // If a next node have the bigger depth, this means that the current node is a parent node for a current level.
+              if ($next_node_level > $level) {
+                $level_parents[$next_node_level] = $navPoint;
+              }
+            }
+
+            $parentNode = isset($level_parents[$level]) ? $level_parents[$level] : $level_parents[1];
+            $parentNode->appendChild($navPoint);
             $i++;
           }
         }
