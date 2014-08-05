@@ -123,6 +123,7 @@ class EPUBPackage {
     // create the initial stub for our package document
     $dom = new \DOMDocument('1.0', 'utf-8');
     $dom->preserveWhiteSpace = false;
+    $dom->formatOutput = true;
     $package = $dom->createElement('package');
     $package->setAttributeNS('http://www.w3.org/2000/xmlns/', 'xmlns', 'http://www.idpf.org/2007/opf');
     $package->setAttribute('id', 'package');
